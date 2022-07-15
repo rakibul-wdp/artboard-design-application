@@ -1,23 +1,29 @@
-import { signOut } from 'firebase/auth';
-import React from 'react';
-import { useAuthState } from 'react-firebase-hooks/auth';
-import auth from '../../firebase.init';
+import React, { useLayoutEffect } from 'react';
+import SignOut from '../Shared/SignOut/SignOut';
+import rough from 'roughjs/bundled/rough.esm';
+
+const generator = rough.generator();
 
 const Drawing = () => {
-  const [user] = useAuthState(auth);
+  useLayoutEffect(() => {
+    const canvas = document.getElementById('canvas');
+    const context = canvas.getContext('2d');
 
-  const logout = () => {
-    signOut(auth);
-    localStorage.removeItem('accessToken');
-  };
+    const roughCanvas = rough.canvas(canvas);
+    const rect = generator.rectangle(10, 10, 100, 100);
+    const line = generator.line(10, 10, 110, 110);
+    roughCanvas.draw(rect);
+    roughCanvas.draw(line);
+  });
+
   return (
     <div>
-      <h2>Drawing page</h2>
-      {user && (
-        <button className='btn btn-ghost' onClick={logout}>
-          Sign Out
-        </button>
-      )}
+      <SignOut />
+      <div>
+        <canvas id='canvas' width={window.innerWidth} height={window.innerHeight}>
+          Canvas
+        </canvas>
+      </div>
     </div>
   );
 };
