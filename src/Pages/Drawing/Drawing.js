@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import SignOut from '../Shared/SignOut/SignOut';
 import rough from 'roughjs/bundled/rough.esm';
 import getStroke from 'perfect-freehand';
@@ -20,6 +20,7 @@ const createElement = (id, x1, y1, x2, y2, type) => {
       throw new Error(`Type not recognised: ${type}`);
   }
 };
+
 const nearPoint = (x, y, x1, y1, name) => {
   return Math.abs(x - x1) < 5 && Math.abs(y - y1) < 5 ? name : null;
 };
@@ -54,6 +55,8 @@ const positionWithinElement = (x, y, element) => {
         return onLine(point.x, point.y, nextPoint.x, nextPoint.y, x, y, 5) != null;
       });
       return betweenAnyPoint ? 'inside' : null;
+    case 'text':
+      return x >= x1 && x <= x2 && y >= y1 && y <= y2 ? 'inside' : null;
     default:
       throw new Error(`Type not recognised: ${type}`);
   }
@@ -77,7 +80,7 @@ const adjustElementCoordinates = (element) => {
     return { x1: minX, y1: minY, x2: maxX, y2: maxY };
   } else {
     if (x1 < x2 || (x1 === x2 && y1 < y2)) {
-      return x1, y1, x2, y2;
+      return { x1, y1, x2, y2 };
     } else {
       return { x1: x2, y1: y2, x2: x1, y2: y1 };
     }
@@ -166,6 +169,11 @@ const drawElement = (roughCanvas, context, element) => {
       const stroke = getSvgPathFromStroke(getStroke(element.points));
       context.fill(new Path2D(stroke));
       break;
+    case 'text':
+      context.textBaseline = 'top';
+      context.font = '24px sans-serif';
+      context.fillText(element.text, element.x1, element.y1);
+      break;
     default:
       throw new Error(`Type not recognised: ${element.type}`);
   }
@@ -176,8 +184,9 @@ const adjustmentRequired = (type) => ['line', 'rectangle'].includes(type);
 const Drawing = () => {
   const [elements, setElements, undo, redo] = useHistory([]);
   const [action, setAction] = useState('none');
-  const [tool, setTool] = useState('pencil');
+  const [tool, setTool] = useState('line');
   const [selectedElement, setSelectedElement] = useState(null);
+  const textAreaRef = useRef();
 
   useLayoutEffect(() => {
     const canvas = document.getElementById('canvas');
@@ -186,8 +195,11 @@ const Drawing = () => {
 
     const roughCanvas = rough.canvas(canvas);
 
-    elements.forEach((element) => drawElement(roughCanvas, context, element));
-  }, [elements]);
+    elements.forEach((element) => {
+      if (action === 'writing' && selectedElement.id === element.id) return;
+      drawElement(roughCanvas, context, element);
+    });
+  }, [elements, action, selectedElement]);
 
   useEffect(() => {
     const undoRedoFunction = (event) => {
@@ -206,7 +218,15 @@ const Drawing = () => {
     };
   }, [undo, redo]);
 
-  const updateElement = (id, x1, y1, x2, y2, type) => {
+  useEffect(() => {
+    const textArea = textAreaRef.current;
+    if (action === 'writing') {
+      textArea.focus();
+      textArea.value = selectedElement.text;
+    }
+  }, [action, selectedElement]);
+
+  const updateElement = (id, x1, y1, x2, y2, type, options) => {
     const elementsCopy = [...elements];
 
     switch (type) {
@@ -217,6 +237,14 @@ const Drawing = () => {
       case 'pencil':
         elementsCopy[id].points = [...elementsCopy[id].points, { x: x2, y: y2 }];
         break;
+      case 'text':
+        const textWidth = document.getElementById('canvas').getContext('2d').measureText(options.text).width;
+        const textHeight = 24;
+        elementsCopy[id] = {
+          ...createElement(id, x1, y1, x1 + textWidth, y1 + textHeight, type),
+          text: options.text,
+        };
+        break;
       default:
         throw new Error(`Type not recognised: ${type}`);
     }
@@ -225,6 +253,8 @@ const Drawing = () => {
   };
 
   const handleMouseDown = (event) => {
+    if (action === 'writing') return;
+
     const { clientX, clientY } = event;
     if (tool === 'selection') {
       const element = getElementAtPosition(clientX, clientY, elements);
@@ -252,9 +282,10 @@ const Drawing = () => {
       setElements((prevState) => [...prevState, element]);
       setSelectedElement(element);
 
-      setAction('drawing');
+      setAction(tool === 'text' ? 'writing' : 'drawing');
     }
   };
+
   const handleMouseMove = (event) => {
     const { clientX, clientY } = event;
 
@@ -285,7 +316,8 @@ const Drawing = () => {
         const height = y2 - y1;
         const newX1 = clientX - offsetX;
         const newY1 = clientY - offsetY;
-        updateElement(id, newX1, newY1, newX1 + width, newY1 + height, type);
+        const options = type === 'text' ? { text: selectedElement.text } : {};
+        updateElement(id, newX1, newY1, newX1 + width, newY1 + height, type, options);
       }
     } else if (action === 'resizing') {
       const { id, type, position, ...coordinates } = selectedElement;
@@ -293,8 +325,19 @@ const Drawing = () => {
       updateElement(id, x1, y1, x2, y2, type);
     }
   };
-  const handleMouseUp = () => {
+
+  const handleMouseUp = (event) => {
+    const { clientX, clientY } = event;
     if (selectedElement) {
+      if (
+        selectedElement.type === 'text' &&
+        clientX - selectedElement.offsetX === selectedElement.x1 &&
+        clientY - selectedElement.offsetY === selectedElement.y1
+      ) {
+        setAction('writing');
+        return;
+      }
+
       const index = selectedElement.id;
       const { id, type } = elements[index];
       if ((action === 'drawing' || action === 'resizing') && adjustmentRequired(type)) {
@@ -302,28 +345,117 @@ const Drawing = () => {
         updateElement(id, x1, y1, x2, y2, type);
       }
     }
+
+    if (action === 'writing') return;
+
     setAction('none');
     setSelectedElement(null);
   };
 
+  const handleBlur = (event) => {
+    const { id, x1, y1, type } = selectedElement;
+    setAction('none');
+    setSelectedElement(null);
+    updateElement(id, x1, y1, null, null, type, { text: event.target.value });
+  };
+
   return (
     <div>
-      <SignOut />
+      <div className='fixed top-5' style={{ marginLeft: '90%' }}>
+        <SignOut />
+      </div>
       <div>
-        <div className='fixed'>
-          <input type='radio' id='selection' checked={tool === 'selection'} onChange={() => setTool('selection')} />
-          <label htmlFor='selection'>Selection</label>
-          <input type='radio' id='line' checked={tool === 'line'} onChange={() => setTool('line')} />
-          <label htmlFor='line'>Line</label>
-          <input type='radio' id='rectangle' checked={tool === 'rectangle'} onChange={() => setTool('rectangle')} />
-          <label htmlFor='rectangle'>Rectangle</label>
-          <input type='radio' id='pencil' checked={tool === 'pencil'} onChange={() => setTool('pencil')} />
-          <label htmlFor='pencil'>Pencil</label>
+        <div className='fixed top-10 flex' style={{ marginLeft: '35%' }}>
+          <div className='flex items-center justify-center border-2 rounded px-3 py-1'>
+            <input
+              type='radio'
+              id='selection'
+              className='radio radio-primary'
+              checked={tool === 'selection'}
+              onChange={() => setTool('selection')}
+            />
+            <label htmlFor='selection' className='text-lg font-bold ml-2'>
+              Selection
+            </label>
+          </div>
+          <div className='flex items-center justify-center border-2 rounded ml-3 px-3 py-1'>
+            <input
+              type='radio'
+              id='line'
+              className='radio radio-primary'
+              checked={tool === 'line'}
+              onChange={() => setTool('line')}
+            />
+            <label htmlFor='line' className='text-lg font-bold ml-2'>
+              Line
+            </label>
+          </div>
+          <div className='flex items-center justify-center border-2 rounded ml-3 px-3 py-1'>
+            <input
+              type='radio'
+              id='rectangle'
+              className='radio radio-primary'
+              checked={tool === 'rectangle'}
+              onChange={() => setTool('rectangle')}
+            />
+            <label htmlFor='rectangle' className='text-lg font-bold ml-2'>
+              Rectangle
+            </label>
+          </div>
+          <div className='flex items-center justify-center border-2 rounded ml-3 px-3 py-1'>
+            <input
+              type='radio'
+              id='pencil'
+              className='radio radio-primary'
+              checked={tool === 'pencil'}
+              onChange={() => setTool('pencil')}
+            />
+            <label htmlFor='pencil' className='text-lg font-bold ml-2'>
+              Pencil
+            </label>
+          </div>
+          <div className='flex items-center justify-center border-2 rounded ml-3 px-3 py-1'>
+            <input
+              type='radio'
+              id='text'
+              className='radio radio-primary'
+              checked={tool === 'text'}
+              onChange={() => setTool('text')}
+            />
+            <label htmlFor='text' className='text-lg font-bold ml-2'>
+              Text
+            </label>
+          </div>
         </div>
-        <div className='fixed bottom-0 p-2.5'>
-          <button onClick={undo}>Undo</button>
-          <button onClick={redo}>Redo</button>
+        <div className='fixed bottom-5 p-10'>
+          <button className='btn btn-primary' onClick={undo}>
+            Undo
+          </button>
+          <button className='btn btn-primary ml-5' onClick={redo}>
+            Redo
+          </button>
         </div>
+        {action === 'writing' ? (
+          <textarea
+            ref={textAreaRef}
+            onBlur={handleBlur}
+            style={{
+              position: 'fixed',
+              top: selectedElement.y1 - 2,
+              left: selectedElement.x1,
+              font: '24px sans-serif',
+              margin: 0,
+              padding: 0,
+              border: 0,
+              outline: 0,
+              resize: 'auto',
+              overflow: 'hidden',
+              whiteSpace: 'pre',
+              background: 'transparent',
+            }}
+          />
+        ) : null}
+
         <canvas
           id='canvas'
           width={window.innerWidth}
