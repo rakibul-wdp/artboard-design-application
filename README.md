@@ -1,6 +1,6 @@
 ### This is an Artboard/Design application.
 
-Here you can interact or art your design. [Artboard Application Preview](https://artboard-design-76f0c.firebaseapp.com/).
+Here you can interact or art your design. [Artboard Application Preview](https://artboard-design-76f0c.web.app/).
 
 - Users can register and login into this application. Actually, non-registered users cannot access the drawing page. For authentication purposes I use firebase.
 - After registering for login user can see the drawing page. Where users can draw anything user's wish.
