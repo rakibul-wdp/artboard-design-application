@@ -184,7 +184,7 @@ const adjustmentRequired = (type) => ['line', 'rectangle'].includes(type);
 const Drawing = () => {
   const [elements, setElements, undo, redo] = useHistory([]);
   const [action, setAction] = useState('none');
-  const [tool, setTool] = useState('line');
+  const [tool, setTool] = useState('pencil');
   const [selectedElement, setSelectedElement] = useState(null);
   const textAreaRef = useRef();
 
@@ -439,10 +439,10 @@ const Drawing = () => {
           <textarea
             ref={textAreaRef}
             onBlur={handleBlur}
+            className='fixed'
             style={{
-              position: 'fixed',
-              top: selectedElement.y1 - 2,
-              left: selectedElement.x1,
+              top: selectedElement?.y1 - 2,
+              left: selectedElement?.x1,
               font: '24px sans-serif',
               margin: 0,
               padding: 0,
@@ -455,7 +455,6 @@ const Drawing = () => {
             }}
           />
         ) : null}
-
         <canvas
           id='canvas'
           width={window.innerWidth}

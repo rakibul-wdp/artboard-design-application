@@ -13,7 +13,7 @@ const SignOut = () => {
   return (
     <div>
       {user && (
-        <button className='btn btn-ghost' onClick={logout}>
+        <button className='btn btn-primary' onClick={logout}>
           Sign Out
         </button>
       )}
