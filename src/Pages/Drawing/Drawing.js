@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useState } from 'react';
 import SignOut from '../Shared/SignOut/SignOut';
 import rough from 'roughjs/bundled/rough.esm';
 
@@ -92,8 +92,31 @@ const resizedCoordinates = (clientX, clientY, position, coordinates) => {
   }
 };
 
+const useHistory = (initialState) => {
+  const [index, setIndex] = useState(0);
+  const [history, setHistory] = useState([initialState]);
+
+  const setState = (action, overwrite = false) => {
+    const newState = typeof action === 'function' ? action(history[index]) : action;
+    if (overwrite) {
+      const historyCopy = [...history];
+      historyCopy[index] = newState;
+      setHistory(historyCopy);
+    } else {
+      const updatedState = [...history].slice(0, index + 1);
+      setHistory([...updatedState, newState]);
+      setIndex((prevState) => prevState + 1);
+    }
+  };
+
+  const undo = () => index > 0 && setIndex((prevState) => prevState - 1);
+  const redo = () => index < history.length - 1 && setIndex((prevState) => prevState + 1);
+
+  return [history[index], setState, undo, redo];
+};
+
 const Drawing = () => {
-  const [elements, setElements] = useState([]);
+  const [elements, setElements, undo, redo] = useHistory([]);
   const [action, setAction] = useState('none');
   const [tool, setTool] = useState('line');
   const [selectedElement, setSelectedElement] = useState(null);
@@ -108,12 +131,29 @@ const Drawing = () => {
     elements.forEach(({ roughElement }) => roughCanvas.draw(roughElement));
   }, [elements]);
 
+  useEffect(() => {
+    const undoRedoFunction = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 'z') {
+        if (event.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', undoRedoFunction);
+    return () => {
+      document.removeEventListener('keydown', undoRedoFunction);
+    };
+  }, [undo, redo]);
+
   const updateElement = (id, x1, y1, x2, y2, type) => {
     const updatedElement = createElement(id, x1, y1, x2, y2, type);
 
     const elementsCopy = [...elements];
     elementsCopy[id] = updatedElement;
-    setElements(elementsCopy);
+    setElements(elementsCopy, true);
   };
 
   const handleMouseDown = (event) => {
@@ -124,6 +164,7 @@ const Drawing = () => {
         const offsetX = clientX - element.x1;
         const offsetY = clientY - element.y1;
         setSelectedElement({ ...element, offsetX, offsetY });
+        setElements((prevState) => prevState);
 
         if (element.position === 'inside') {
           setAction('moving');
@@ -166,11 +207,13 @@ const Drawing = () => {
     }
   };
   const handleMouseUp = () => {
-    const index = selectedElement.id;
-    const { id, type } = elements[index];
-    if (action === 'drawing' || action === 'resizing') {
-      const { x1, y1, x2, y2 } = adjustElementCoordinates(elements[index]);
-      updateElement(id, x1, y1, x2, y2, type);
+    if (selectedElement) {
+      const index = selectedElement.id;
+      const { id, type } = elements[index];
+      if (action === 'drawing' || action === 'resizing') {
+        const { x1, y1, x2, y2 } = adjustElementCoordinates(elements[index]);
+        updateElement(id, x1, y1, x2, y2, type);
+      }
     }
     setAction('none');
     setSelectedElement(null);
@@ -187,6 +230,10 @@ const Drawing = () => {
           <label htmlFor='line'>Line</label>
           <input type='radio' id='rectangle' checked={tool === 'rectangle'} onChange={() => setTool('rectangle')} />
           <label htmlFor='rectangle'>Rectangle</label>
+        </div>
+        <div className='fixed bottom-0 p-2.5'>
+          <button onClick={undo}>Undo</button>
+          <button onClick={redo}>Redo</button>
         </div>
         <canvas
           id='canvas'
